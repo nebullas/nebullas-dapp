@@ -12,6 +12,12 @@ export default function BuyCard() {
   const [amount, setAmount] = useState<string>("50");
   const [usdtDec, setUsdtDec] = useState<number>(18);
 
+  // ---- Added for hydration handling ----
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <div suppressHydrationWarning style={{ height: 260 }} />;
+  // -------------------------------------
+
   const { data: dUSDT } = useReadContract({ address: ADDR.USDT, abi: usdtAbi, functionName: "decimals" });
   useEffect(() => { if (typeof dUSDT === "number") setUsdtDec(dUSDT); }, [dUSDT]);
 
