@@ -1,72 +1,79 @@
 "use client";
 
+import React, { useMemo, useState } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { ADDR } from "@/config/contracts";
-import { registryAbi } from "@/lib/abi/registry";
-import { treeAbi } from "@/lib/abi/tree";
-import { useMemo } from "react";
-import { useMounted } from "@/lib/hooks/useMounted";
+import ADDRJSON from "@/config/addresses.testnet.json"; // { REG, ... }
+import { partnerRegistryAbi } from "@/lib/abi/partnerRegistry";
 
-const STATES = ["NOT_ELIGIBLE","ELIGIBLE","PENDING","APPROVED","REJECTED","SUSPENDED"] as const;
-const toLabel = (v: unknown) => {
-  const n = Number(v);
-  return Number.isFinite(n) && n >= 0 && n < STATES.length ? STATES[n as 0|1|2|3|4|5] : "-";
-};
+const ADDR = ADDRJSON as unknown as { REG: `0x${string}` };
+
+const states = ["NOT_ELIGIBLE","ELIGIBLE","PENDING","APPROVED","REJECTED","SUSPENDED"] as const;
 
 export default function PartnerPage() {
-  const mounted = useMounted();
   const { address } = useAccount();
-  const you = address as `0x${string}` | undefined;
+  const zero = "0x0000000000000000000000000000000000000000" as `0x${string}`;
 
-  const enable = mounted && !!you;
-
-  const { data: kycOK } = useReadContract({
-    address: ADDR.REG, abi: registryAbi, functionName: "kycPassed",
-    args: [you!], query: { enabled: enable }
+  const { data: kyc } = useReadContract({
+    address: ADDR.REG, abi: partnerRegistryAbi, functionName: "kycPassed",
+    args: [ (address ?? zero) ],
+    query: { enabled: !!address }
   });
 
-  const { data: stateRaw } = useReadContract({
-    address: ADDR.REG, abi: registryAbi, functionName: "stateOf",
-    args: [you!], query: { enabled: enable }
-  });
-  const partnerState = useMemo(() => toLabel(stateRaw), [stateRaw]);
-
-  const { data: ups } = useReadContract({
-    address: ADDR.TREE, abi: treeAbi, functionName: "uplines",
-    args: [you!], query: { enabled: enable }
+  const { data: rawState } = useReadContract({
+    address: ADDR.REG, abi: partnerRegistryAbi, functionName: "stateOf",
+    args: [ (address ?? zero) ],
+    query: { enabled: !!address }
   });
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
-  const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const stateLabel = useMemo(() => {
+    const i = Number(rawState ?? 0);
+    return states[i] ?? "-";
+  }, [rawState]);
 
-  const canApply = partnerState === "ELIGIBLE" || partnerState === "REJECTED";
+  const { writeContractAsync, isPending } = useWriteContract();
+  const [hash, setHash] = useState<`0x${string}` | undefined>();
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onApply() {
+    if (!address) return;
+    setErr(null); setHash(undefined);
+    try {
+      const h = await writeContractAsync({
+        address: ADDR.REG,
+        abi: partnerRegistryAbi,
+        functionName: "applyAsPartner",
+        account: address
+      });
+      setHash(h as `0x${string}`);
+    } catch (e: any) {
+      setErr(e?.shortMessage || e?.message || "Apply failed");
+    }
+  }
+
+  const { isLoading: waiting, isSuccess } = useWaitForTransactionReceipt({ hash, query: { enabled: !!hash } });
 
   return (
     <main style={{ maxWidth: 900, margin: "30px auto", padding: "0 16px" }}>
       <h2>Partner Dashboard</h2>
-      <p><small suppressHydrationWarning>You: {mounted && you ? you : "-"}</small></p>
+      <p>You: {address ?? "-"}</p>
 
-      <section style={{ border:"1px solid #e5e7eb", padding:16, borderRadius:8 }}>
-        <p>KYC: <b>{String(kycOK ?? "-")}</b> • Partner State: <b>{partnerState}</b></p>
-        {canApply && you && (
-          <button
-            disabled={isPending || mining}
-            onClick={() => writeContract({ address: ADDR.REG, abi: registryAbi, functionName: "applyAsPartner", args: [] })}
-          >
-            {isPending || mining ? "Applying…" : "Apply as Partner"}
+      <section style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+        <p>KYC: <strong>{Boolean(kyc).toString()}</strong> • Partner State: <strong>{stateLabel}</strong></p>
+
+        {stateLabel === "ELIGIBLE" && (
+          <button onClick={onApply} disabled={!address || isPending || waiting} style={{ padding: "6px 12px" }}>
+            {(isPending || waiting) ? "Applying…" : "Apply as Partner"}
           </button>
         )}
-        {txHash && <p style={{ marginTop:8 }}><small>Tx: {txHash}</small></p>}
-        {isSuccess && <p style={{ color:"green" }}>Success ✓</p>}
+
+        {hash && <p>Tx: <a href={`https://testnet.bscscan.com/tx/${hash}`} target="_blank" rel="noreferrer">{hash}</a></p>}
+        {isSuccess && <p style={{ color: "green" }}>Success ✓</p>}
+        {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
       </section>
 
-      <section style={{ border:"1px solid #e5e7eb", padding:16, borderRadius:8, marginTop:16 }}>
+      <section style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginTop: 18 }}>
         <h3>Uplines (6‑level)</h3>
-        <ol>
-          {(ups as string[] | undefined)?.map((a, i) => (
-            <li key={i}><code>L{i+1}</code>: {a === "0x0000000000000000000000000000000000000000" ? "—" : a}</li>
-          )) ?? <li>—</li>}
-        </ol>
+        <p>L1: —</p><p>L2: —</p><p>L3: —</p><p>L4: —</p><p>L5: —</p><p>L6: —</p>
       </section>
     </main>
   );
