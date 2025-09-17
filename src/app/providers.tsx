@@ -6,7 +6,7 @@ import { ReactNode, useMemo } from "react";
 import { RPC_URL } from "@/config/contracts";
 
 const chain = { ...bscTestnet, rpcUrls: { public: { http: [RPC_URL] }, default: { http: [RPC_URL] } } };
-const config = createConfig({ chains: [chain], transports: { [chain.id]: http(RPC_URL) } });
+const config = createConfig({ chains: [chain], transports: { [chain.id]: http(RPC_URL) }, ssr: false });
 
 export function Providers({ children }: { children: ReactNode }) {
   const qc = useMemo(() => new QueryClient(), []);
