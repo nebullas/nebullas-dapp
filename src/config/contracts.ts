@@ -1,16 +1,20 @@
-import addrs from "./addresses.testnet.json";
+// src/config/contracts.ts
+// Addresses JSON से आते हैं; tsconfig में resolveJsonModule=true होना चाहिए.
+import ADDR_JSON from "./addresses.testnet.json";
 
-export const ADDR = {
-  USDT: addrs.USDT as `0x${string}`,
-  NBL:  addrs.NBL  as `0x${string}`,
-  REG:  addrs.REG  as `0x${string}`,
-  TREE: addrs.TREE as `0x${string}`,
-  POOL: addrs.POOL as `0x${string}`,
-  SALE: addrs.SALE as `0x${string}`,
+export type Address = `0x${string}`;
+
+// Dapp में centralized, typed addresses
+export const ADDR = ADDR_JSON as {
+  USDT: Address;
+  NBL: Address;
+  REG: Address;
+  TREE: Address;
+  POOL: Address;
+  SALE: Address;
 };
 
-export const CHAIN_ID = 97; // BSC Testnet
+// Public RPC (env से), fallback BSC testnet public RPC
 export const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL ||
   process.env.NEXT_PUBLIC_RPC_BSC_TESTNET ||
-  "https://bsc-testnet.publicnode.com";
+  "https://data-seed-prebsc-1-s1.binance.org:8545";

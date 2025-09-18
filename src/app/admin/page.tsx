@@ -1,101 +1,114 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import ADDR from '@/config/addresses.testnet.json';
+import { isAddress } from 'viem';
+import { useEffect, useMemo, useState } from 'react';
+
+import { ADDR } from '@/config/contracts';
 import { partnerRegistryAbi } from '@/lib/abi/partnerRegistry';
 
-const ZERO = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+const STATE = ['NOT_ELIGIBLE', 'ELIGIBLE', 'PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'] as const;
 
 export default function AdminPage() {
-  const { address: admin, isConnected } = useAccount();
-
-  // SSR hydration-safe UI
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  // Address input (जिस यूज़र के लिए KYC/Approve करना है)
+  const { address: admin } = useAccount();
   const [input, setInput] = useState<string>('');
-  const target = useMemo(
-    () => ((input && input.startsWith('0x') && input.length === 42) ? (input as `0x${string}`) : ZERO),
-    [input]
-  );
 
-  // Reads — hooks हमेशा कॉल हों, भले target ZERO हो (no conditional hooks)
+  // Normalize target address for calls
+  const target = useMemo(() => (isAddress(input) ? (input as `0x${string}`) : undefined), [input]);
+
+  // READS: never call hooks conditionally; use `query.enabled`
   const { data: kyc } = useReadContract({
-    address: ADDR.REG as `0x${string}`,
+    address: ADDR.REG,
     abi: partnerRegistryAbi,
     functionName: 'kycPassed',
-    args: [target],
+    args: target ? [target] : undefined,
+    query: { enabled: Boolean(target) },
   });
 
   const { data: stateRaw } = useReadContract({
-    address: ADDR.REG as `0x${string}`,
+    address: ADDR.REG,
     abi: partnerRegistryAbi,
     functionName: 'stateOf',
-    args: [target],
+    args: target ? [target] : undefined,
+    query: { enabled: Boolean(target) },
   });
 
-  const stateLabel = useMemo(() => {
-    if (typeof stateRaw === 'bigint') {
-      const L = ['NOT_ELIGIBLE','ELIGIBLE','PENDING','APPROVED','REJECTED','SUSPENDED'] as const;
-      return L[Number(stateRaw)] ?? '-';
-    }
-    return '-';
-  }, [stateRaw]);
+  const stateLabel = typeof stateRaw === 'number' ? STATE[stateRaw] ?? '-' : '-';
 
-  // Writes
-  const { writeContract, data: hash, isPending } = useWriteContract();
-  const receipt = useWaitForTransactionReceipt({ hash }); // unconditional
-  const waiting = isPending || receipt.isLoading;
+  // WRITES
+  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { isLoading: waiting, isSuccess } = useWaitForTransactionReceipt({
+    hash: txHash,
+    confirmations: 1,
+  });
 
-  const onSetKYCTrue = () =>
+  // After success, triggers refetch via focus or simple input trick if needed
+  useEffect(() => {
+    // no-op: wagmi/query will refetch on new block/focus; we keep this for clarity
+  }, [isSuccess]);
+
+  const onSetKYCTrue = () => {
+    if (!target) return;
     writeContract({
-      address: ADDR.REG as `0x${string}`,
+      address: ADDR.REG,
       abi: partnerRegistryAbi,
       functionName: 'setKYC',
       args: [target, true],
     });
+  };
 
-  const onApprovePartner = () =>
+  const onApprovePartner = () => {
+    if (!target) return;
     writeContract({
-      address: ADDR.REG as `0x${string}`,
+      address: ADDR.REG,
       abi: partnerRegistryAbi,
       functionName: 'approve',
       args: [target, true],
     });
+  };
 
   return (
     <main style={{ maxWidth: 900, margin: '30px auto', padding: '0 16px' }}>
       <h2>Admin Panel</h2>
-      <p>Admin: {mounted ? (admin ?? '—') : '—'}</p>
+      <p>Admin: {admin ?? '-'}</p>
 
-      <section style={{ border:'1px solid #e5e7eb', padding:16, borderRadius:8 }}>
-        <h3>KYC & Partner</h3>
+      <section style={{ border: '1px solid #e5e7eb', padding: 16, borderRadius: 8 }}>
+        <h3>KYC &amp; Partner</h3>
 
-        <label style={{ display:'block', marginBottom:8 }}>Address</label>
+        <label>Address</label>
         <input
-          value={input}
-          onChange={(e)=> setInput(e.currentTarget.value.trim())}
           placeholder="0x..."
-          style={{ width:'100%', padding:8 }}
+          value={input}
+          onChange={(e) => setInput(e.target.value.trim())}
+          style={{ width: '100%', margin: '8px 0' }}
         />
 
-        <p style={{ marginTop:8 }}>
+        <p>
           KYC: <strong>{String(Boolean(kyc))}</strong> • Partner State: <strong>{stateLabel}</strong>
         </p>
 
-        <div style={{ display:'flex', gap:12, marginTop:8 }}>
-          <button onClick={onSetKYCTrue} disabled={!mounted || !isConnected || waiting}>Set KYC = true</button>
-          <button onClick={onApprovePartner} disabled={!mounted || !isConnected || waiting}>Approve Partner</button>
+        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+          <button onClick={onSetKYCTrue} disabled={!target || isPending || waiting}>
+            Set KYC = true
+          </button>
+          <button onClick={onApprovePartner} disabled={!target || isPending || waiting}>
+            Approve Partner
+          </button>
         </div>
 
-        {hash && (
-          <p style={{ marginTop:8 }}>
-            Tx: <a href={`https://testnet.bscscan.com/tx/${hash}`} target="_blank" rel="noreferrer">{hash}</a>
+        {txHash && (
+          <p>
+            Tx:{' '}
+            <a
+              href={`https://testnet.bscscan.com/tx/${txHash}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {txHash}
+            </a>
           </p>
         )}
-        {receipt.isSuccess && <p style={{ color:'green' }}>Success ✓</p>}
+        {isSuccess && <p style={{ color: 'green' }}>Success ✓</p>}
       </section>
     </main>
   );
