@@ -1,103 +1,149 @@
 'use client';
 
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { isAddress } from 'viem';
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
+import {
+  useAccount,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from 'wagmi';
 
 import { ADDR } from '@/config/contracts';
 import { partnerRegistryAbi } from '@/lib/abi/partnerRegistry';
+import { partnerTreeAbi } from '@/lib/abi/partnerTree';
 
-const STATE = ['NOT_ELIGIBLE', 'ELIGIBLE', 'PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'] as const;
+type Addr = `0x${string}`;
+
+const STATES = [
+  'NOT_ELIGIBLE',
+  'ELIGIBLE',
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'SUSPENDED',
+] as const;
 
 export default function AdminPage() {
-  const { address: admin } = useAccount();
-  const [input, setInput] = useState<string>('');
+  const { address: connected, isConnected } = useAccount();
 
-  // Normalize target address for calls
-  const target = useMemo(() => (isAddress(input) ? (input as `0x${string}`) : undefined), [input]);
+  // ---------------- KYC & Partner (Registry) ----------------
+  const [who, setWho] = useState<string>('');
+  const whoAddr: Addr | undefined =
+    who && who.startsWith('0x') && who.length === 42 ? (who as Addr) : undefined;
 
-  // READS: never call hooks conditionally; use `query.enabled`
-  const { data: kyc } = useReadContract({
+  const kycRead = useReadContract({
     address: ADDR.REG,
     abi: partnerRegistryAbi,
     functionName: 'kycPassed',
-    args: target ? [target] : undefined,
-    query: { enabled: Boolean(target) },
+    args: [whoAddr ?? ('0x0000000000000000000000000000000000000000' as Addr)],
+    query: { enabled: Boolean(whoAddr) },
   });
 
-  const { data: stateRaw } = useReadContract({
+  const stateRead = useReadContract({
     address: ADDR.REG,
     abi: partnerRegistryAbi,
     functionName: 'stateOf',
-    args: target ? [target] : undefined,
-    query: { enabled: Boolean(target) },
+    args: [whoAddr ?? ('0x0000000000000000000000000000000000000000' as Addr)],
+    query: { enabled: Boolean(whoAddr) },
   });
 
-  const stateLabel = typeof stateRaw === 'number' ? STATE[stateRaw] ?? '-' : '-';
+  const stateLabel = useMemo(() => {
+    const v = stateRead.data as number | undefined;
+    return typeof v === 'number' ? STATES[v] : '-';
+  }, [stateRead.data]);
 
-  // WRITES
-  const { writeContract, data: txHash, isPending } = useWriteContract();
-  const { isLoading: waiting, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
-    confirmations: 1,
-  });
+  const { writeContract, data: txHash, isPending, reset, error } = useWriteContract();
+  const waitTx = useWaitForTransactionReceipt({ hash: txHash });
 
-  // After success, triggers refetch via focus or simple input trick if needed
-  useEffect(() => {
-    // no-op: wagmi/query will refetch on new block/focus; we keep this for clarity
-  }, [isSuccess]);
+  const waiting = isPending || waitTx.isLoading;
 
   const onSetKYCTrue = () => {
-    if (!target) return;
+    if (!whoAddr) return;
     writeContract({
       address: ADDR.REG,
       abi: partnerRegistryAbi,
       functionName: 'setKYC',
-      args: [target, true],
+      args: [whoAddr, true],
     });
   };
 
   const onApprovePartner = () => {
-    if (!target) return;
+    if (!whoAddr) return;
     writeContract({
       address: ADDR.REG,
       abi: partnerRegistryAbi,
       functionName: 'approve',
-      args: [target, true],
+      args: [whoAddr, true],
     });
   };
 
+  // ---------------- Partner Network — Bind Upline (Tree) ----------------
+  const [user, setUser] = useState<string>('');
+  const [referrer, setReferrer] = useState<string>('');
+  const userAddr: Addr | undefined =
+    user && user.startsWith('0x') && user.length === 42 ? (user as Addr) : undefined;
+  const refAddr: Addr | undefined =
+    referrer && referrer.startsWith('0x') && referrer.length === 42
+      ? (referrer as Addr)
+      : undefined;
+
+  const {
+    writeContract: writeBind,
+    data: bindHash,
+    isPending: bindPending,
+    error: bindError,
+  } = useWriteContract();
+
+  const bindWait = useWaitForTransactionReceipt({ hash: bindHash });
+  const bindWaiting = bindPending || bindWait.isLoading;
+
+  const onBindReferrer = () => {
+    if (!userAddr || !refAddr) return;
+    writeBind({
+      address: ADDR.TREE,
+      abi: partnerTreeAbi,
+      functionName: 'bindReferrer',
+      args: [userAddr, refAddr],
+    });
+  };
+
+  // ---------------- UI ----------------
   return (
     <main style={{ maxWidth: 900, margin: '30px auto', padding: '0 16px' }}>
       <h2>Admin Panel</h2>
-      <p>Admin: {admin ?? '-'}</p>
+      <p style={{ marginBottom: 12 }}>
+        <small>Admin: {connected ?? '-'}</small>
+      </p>
 
-      <section style={{ border: '1px solid #e5e7eb', padding: 16, borderRadius: 8 }}>
-        <h3>KYC &amp; Partner</h3>
+      {/* KYC & Partner */}
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, marginBottom: 20 }}>
+        <h3>KYC & Partner</h3>
 
-        <label>Address</label>
+        <label htmlFor="who">Address</label>
         <input
+          id="who"
           placeholder="0x..."
-          value={input}
-          onChange={(e) => setInput(e.target.value.trim())}
-          style={{ width: '100%', margin: '8px 0' }}
+          value={who}
+          onChange={(e) => setWho(e.target.value.trim())}
+          style={{ width: '100%', padding: 8, margin: '6px 0 12px', fontFamily: 'monospace' }}
         />
 
         <p>
-          KYC: <strong>{String(Boolean(kyc))}</strong> • Partner State: <strong>{stateLabel}</strong>
+          KYC: <strong>{String(Boolean(kycRead.data))}</strong> • Partner State:{' '}
+          <strong>{stateLabel}</strong>
         </p>
 
         <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-          <button onClick={onSetKYCTrue} disabled={!target || isPending || waiting}>
+          <button onClick={onSetKYCTrue} disabled={!isConnected || !whoAddr || waiting}>
             Set KYC = true
           </button>
-          <button onClick={onApprovePartner} disabled={!target || isPending || waiting}>
+          <button onClick={onApprovePartner} disabled={!isConnected || !whoAddr || waiting}>
             Approve Partner
           </button>
         </div>
 
         {txHash && (
-          <p>
+          <p style={{ marginTop: 8 }}>
             Tx:{' '}
             <a
               href={`https://testnet.bscscan.com/tx/${txHash}`}
@@ -108,7 +154,63 @@ export default function AdminPage() {
             </a>
           </p>
         )}
-        {isSuccess && <p style={{ color: 'green' }}>Success ✓</p>}
+        {waitTx.isSuccess && <p style={{ color: 'green' }}>Success ✓</p>}
+        {error && <p style={{ color: 'crimson' }}>Error: {String(error.shortMessage || error.message)}</p>}
+      </section>
+
+      {/* Partner Network — Bind Upline */}
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
+        <h3>Partner Network — Bind Upline</h3>
+
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div>
+            <label htmlFor="user">User (0x...)</label>
+            <input
+              id="user"
+              placeholder="0x..."
+              value={user}
+              onChange={(e) => setUser(e.target.value.trim())}
+              style={{ width: '100%', padding: 8, marginTop: 6, fontFamily: 'monospace' }}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="ref">Referrer (0x...)</label>
+            <input
+              id="ref"
+              placeholder="0x..."
+              value={referrer}
+              onChange={(e) => setReferrer(e.target.value.trim())}
+              style={{ width: '100%', padding: 8, marginTop: 6, fontFamily: 'monospace' }}
+            />
+          </div>
+
+          <div style={{ marginTop: 6 }}>
+            <button
+              onClick={onBindReferrer}
+              disabled={!isConnected || !userAddr || !refAddr || bindWaiting}
+            >
+              Bind Referrer
+            </button>
+          </div>
+
+          {bindHash && (
+            <p style={{ marginTop: 8 }}>
+              Tx:{' '}
+              <a
+                href={`https://testnet.bscscan.com/tx/${bindHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {bindHash}
+              </a>
+            </p>
+          )}
+          {bindWait.isSuccess && <p style={{ color: 'green' }}>Success ✓</p>}
+          {bindError && (
+            <p style={{ color: 'crimson' }}>Error: {String(bindError.shortMessage || bindError.message)}</p>
+          )}
+        </div>
       </section>
     </main>
   );
