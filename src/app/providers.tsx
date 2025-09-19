@@ -1,19 +1,22 @@
+// src/app/providers.tsx
 'use client';
 
-import { ReactNode, useMemo } from "react";
-import { WagmiProvider, createConfig, http } from "wagmi";
-import { bscTestnet } from "wagmi/chains";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RPC_URL } from "@/config/contracts";
+import { WagmiProvider, createConfig, http } from 'wagmi';
+import { bscTestnet } from 'wagmi/chains';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactNode, useMemo } from 'react';
+import { RPC_URL } from '@/config/contracts';
 
-// एक ही chain object, लेकिन हमारे RPC_URL के साथ
 const chain = {
   ...bscTestnet,
-  rpcUrls: { public: { http: [RPC_URL] }, default: { http: [RPC_URL] } },
-};
+  rpcUrls: {
+    ...bscTestnet.rpcUrls,
+    public: { http: [RPC_URL] },
+    default: { http: [RPC_URL] },
+  },
+} as const;
 
-// SSR=false ताकि hydration mismatch कम हों
-export const wagmiConfig = createConfig({
+const config = createConfig({
   chains: [chain],
   transports: { [chain.id]: http(RPC_URL) },
   ssr: false,
@@ -22,7 +25,7 @@ export const wagmiConfig = createConfig({
 export default function Providers({ children }: { children: ReactNode }) {
   const qc = useMemo(() => new QueryClient(), []);
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={config}>
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     </WagmiProvider>
   );

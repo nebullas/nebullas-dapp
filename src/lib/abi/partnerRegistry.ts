@@ -1,38 +1,47 @@
 // src/lib/abi/partnerRegistry.ts
-// Minimal ABI needed by admin/partner pages.
 export const partnerRegistryAbi = [
+  // view: kycPassed(address) -> bool
   {
-    type: "function",
-    name: "kycPassed",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [{ type: "bool" }],
+    "inputs": [{"internalType":"address","name":"u","type":"address"}],
+    "name":"kycPassed",
+    "outputs":[{"internalType":"bool","name":"","type":"bool"}],
+    "stateMutability":"view","type":"function"
   },
+  // view: stateOf(address) -> uint8 (enum State का underlying)
   {
-    type: "function",
-    name: "stateOf",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [{ type: "uint8" }],
+    "inputs":[{"internalType":"address","name":"","type":"address"}],
+    "name":"stateOf",
+    "outputs":[{"internalType":"uint8","name":"","type":"uint8"}],
+    "stateMutability":"view","type":"function"
   },
+  // admin helpers (अगर UI में लगें)
   {
-    type: "function",
-    name: "setKYC",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "user", type: "address" },
-      { name: "ok", type: "bool" },
+    "inputs":[], "name":"ADMIN_ROLE",
+    "outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],
+    "stateMutability":"view","type":"function"
+  },
+  // onlyAdmin: setKYC(address,bool)
+  {
+    "inputs":[
+      {"internalType":"address","name":"u","type":"address"},
+      {"internalType":"bool","name":"ok","type":"bool"}
     ],
-    outputs: [],
+    "name":"setKYC","outputs":[],"stateMutability":"nonpayable","type":"function"
   },
+  // user action: applyAsPartner()
   {
-    type: "function",
-    name: "approve",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "user", type: "address" },
-      { name: "ok", type: "bool" },
-    ],
-    outputs: [],
+    "inputs":[], "name":"applyAsPartner",
+    "outputs":[], "stateMutability":"nonpayable","type":"function"
   },
+  // onlyAdmin: approve(address,bool)
+  {
+    "inputs":[
+      {"internalType":"address","name":"u","type":"address"},
+      {"internalType":"bool","name":"ok","type":"bool"}
+    ],
+    "name":"approve","outputs":[],
+    "stateMutability":"nonpayable","type":"function"
+  }
 ] as const;
+
+export default partnerRegistryAbi;
