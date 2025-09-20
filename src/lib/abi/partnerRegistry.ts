@@ -1,47 +1,23 @@
-// src/lib/abi/partnerRegistry.ts
+/**
+ * PartnerRegistry ABI — read & admin writes:
+ * - kycPassed(address) -> bool
+ * - stateOf(address)   -> uint8   (0:none,1:eligible,2:pending,3:approved जैसी कोई भी enum)
+ * - applyAsPartner()
+ * - setKYC(address,bool)
+ * - approve(address)
+ */
 export const partnerRegistryAbi = [
-  // view: kycPassed(address) -> bool
-  {
-    "inputs": [{"internalType":"address","name":"u","type":"address"}],
-    "name":"kycPassed",
-    "outputs":[{"internalType":"bool","name":"","type":"bool"}],
-    "stateMutability":"view","type":"function"
-  },
-  // view: stateOf(address) -> uint8 (enum State का underlying)
-  {
-    "inputs":[{"internalType":"address","name":"","type":"address"}],
-    "name":"stateOf",
-    "outputs":[{"internalType":"uint8","name":"","type":"uint8"}],
-    "stateMutability":"view","type":"function"
-  },
-  // admin helpers (अगर UI में लगें)
-  {
-    "inputs":[], "name":"ADMIN_ROLE",
-    "outputs":[{"internalType":"bytes32","name":"","type":"bytes32"}],
-    "stateMutability":"view","type":"function"
-  },
-  // onlyAdmin: setKYC(address,bool)
-  {
-    "inputs":[
-      {"internalType":"address","name":"u","type":"address"},
-      {"internalType":"bool","name":"ok","type":"bool"}
-    ],
-    "name":"setKYC","outputs":[],"stateMutability":"nonpayable","type":"function"
-  },
-  // user action: applyAsPartner()
-  {
-    "inputs":[], "name":"applyAsPartner",
-    "outputs":[], "stateMutability":"nonpayable","type":"function"
-  },
-  // onlyAdmin: approve(address,bool)
-  {
-    "inputs":[
-      {"internalType":"address","name":"u","type":"address"},
-      {"internalType":"bool","name":"ok","type":"bool"}
-    ],
-    "name":"approve","outputs":[],
-    "stateMutability":"nonpayable","type":"function"
-  }
-] as const;
+  { type:'function', name:'kycPassed', stateMutability:'view',
+    inputs:[{name:'u',type:'address'}], outputs:[{type:'bool'}] },
 
-export default partnerRegistryAbi;
+  { type:'function', name:'stateOf', stateMutability:'view',
+    inputs:[{name:'u',type:'address'}], outputs:[{type:'uint8'}] },
+
+  { type:'function', name:'applyAsPartner', stateMutability:'nonpayable', inputs:[], outputs:[] },
+
+  { type:'function', name:'setKYC', stateMutability:'nonpayable',
+    inputs:[{name:'u',type:'address'},{name:'v',type:'bool'}], outputs:[] },
+
+  { type:'function', name:'approve', stateMutability:'nonpayable',
+    inputs:[{name:'u',type:'address'}], outputs:[] }
+] as const;

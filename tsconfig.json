@@ -7,7 +7,7 @@
       "DOM.Iterable"
     ],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "bundler",
     "jsx": "preserve",
     "strict": true,
     "noEmit": true,
@@ -16,7 +16,9 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "types": [
-      "node"
+      "node",
+      "wagmi",
+      "viem"
     ],
     "baseUrl": ".",
     "paths": {

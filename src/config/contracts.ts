@@ -1,43 +1,18 @@
-// src/config/contracts.ts
-import addresses from './addresses.testnet.json' assert { type: 'json' };
+/**
+ * कॉन्ट्रैक्ट एड्रेस लोडर (BSC Testnet)
+ * नोट: src/config/addresses.testnet.json से मैप करें।
+ */
+import addrs from './addresses.testnet.json';
 
-export type Address = `0x${string}`;
+export const ADDR = {
+  USDT: (addrs as any).USDT as `0x${string}`,
+  NBL:  (addrs as any).NBL as `0x${string}`,
+  SALE: (addrs as any).NBLSale as `0x${string}`,
+  REGISTRY: (addrs as any).PartnerRegistry as `0x${string}`,
+  TREE: (addrs as any).PartnerTree as `0x${string}`,
+} as const;
 
-type AddressBook = {
-  USDT: Address;
-  NBL: Address;
-  REG: Address;   // PartnerRegistry
-  TREE: Address;  // PartnerTree
-  POOL: Address;  // PoolVault
-  SALE: Address;  // NBLSaleV5
-};
-
-// ✅ JSON से आए addresses को type‑safe बनाएं
-export const ADDR = addresses as AddressBook;
-
-export const CHAIN_ID = 97; // BSC Testnet
-
-// ✅ RPC URL — .env / variable से, वरना safe fallback
+/** RPC — अगर .env में न हो तो पब्लिक टेस्टनेट नोड पर fallback */
 export const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_BSC_TESTNET ||
-  process.env.NEXT_PUBLIC_RPC_URL ||
-  'https://data-seed-prebsc-1-s1.binance.org:8545';
-
-export const ZERO_ADDRESS: Address =
-  '0x0000000000000000000000000000000000000000';
-
-// PartnerState (guess: 0=None, 1=ELIGIBLE, 2=PENDING, 3=APPROVED)
-export function stateLabel(state?: bigint | number) {
-  const n = typeof state === 'bigint' ? Number(state) : state ?? -1;
-  switch (n) {
-    case 1: return 'ELIGIBLE';
-    case 2: return 'PENDING';
-    case 3: return 'APPROVED';
-    case 0: return '-';
-    default: return '-';
-  }
-}
-
-export function short(addr?: Address) {
-  return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '—';
-}
+  process.env.NEXT_PUBLIC_RPC_BSC_TESTNET ??
+  'https://data-seed-prebsc-2-s3.binance.org:8545/';

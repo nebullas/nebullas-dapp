@@ -1,151 +1,120 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  useAccount,
-  useReadContract,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-} from "wagmi";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from 'react';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { ADDR } from '@/config/contracts';
+import { usdtAbi } from '@/lib/abi/usdt';
+import { nblSaleAbi } from '@/lib/abi/nblSale';
 
-import { ADDR } from "@/config/contracts";
-import { usdtAbi } from "@/lib/abi/usdt";
-import { nblSaleAbi } from "@/lib/abi/nblSale";
-
-const ZERO = "0x0000000000000000000000000000000000000000" as const;
-const asAddr = (s?: string | null): (`0x${string}` | undefined) =>
-  s && /^0x[0-9a-fA-F]{40}$/.test(s) ? (s as `0x${string}`) : undefined;
+function toWei(amount: string | number, decimals: number) {
+  const bn = BigInt(Math.round(Number(amount) * 10 ** 6)) * (10n ** BigInt(decimals - 6)); // safe for 6..18
+  return bn;
+}
 
 export default function BuyPage() {
-  const { address } = useAccount();
-  const search = useSearchParams();
-  const refParam = asAddr(search.get("ref")) ?? (ZERO as `0x${string}`);
+  const { address, isConnected } = useAccount();
 
-  const [amount, setAmount] = useState<number>(50);
+  // referral पकड़ें (URL / localStorage)
+  const [ref, setRef] = useState<`0x${string}` | undefined>();
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    const r = u.searchParams.get('ref') as `0x${string}` | null;
+    const saved = window.localStorage.getItem('ref') as `0x${string}` | null;
+    const finalRef = (r ?? saved ?? undefined) as `0x${string}` | undefined;
+    if (r) window.localStorage.setItem('ref', r);
+    setRef(finalRef);
+  }, []);
 
-  // USDT decimals
+  const [amount, setAmount] = useState('50'); // USDT
+
+  // USDT.decimals
   const decRead = useReadContract({
     address: ADDR.USDT,
     abi: usdtAbi,
-    functionName: "decimals",
+    functionName: 'decimals',
+    args: [],
+    query: { enabled: Boolean(ADDR.USDT) }
   });
-  const dec = Number(decRead.data ?? 18);
 
-  const amountWei = useMemo(() => {
-    const a = BigInt(Math.floor((amount || 0) * 10 ** 6)); // अगर mUSDT=6 हो तो ओवरराइड
-    return BigInt(Math.floor((amount || 0) * 10 ** dec));
-  }, [amount, dec]);
+  // allowance(o,s)
+  const allowance = useReadContract({
+    address: ADDR.USDT,
+    abi: usdtAbi,
+    functionName: 'allowance',
+    args: [address ?? '0x0000000000000000000000000000000000000000', ADDR.SALE],
+    query: { enabled: isConnected }
+  });
+
+  const needApprove = useMemo(() => {
+    const dec = Number(decRead.data ?? 18);
+    const wei = toWei(amount, dec);
+    const cur = BigInt(allowance.data ?? 0n);
+    return cur < wei;
+  }, [allowance.data, decRead.data, amount]);
 
   // Approve
-  const {
-    writeContract: writeApprove,
-    data: approveHash,
-    isPending: approvePending,
-    error: approveErr,
-  } = useWriteContract();
-
-  const approveRec = useWaitForTransactionReceipt({
-    hash: approveHash,
-    query: { enabled: !!approveHash },
-  });
-
-  function onApprove() {
-    writeApprove({
-      address: ADDR.USDT,
-      abi: usdtAbi,
-      functionName: "approve",
-      args: [ADDR.SALE, amountWei],
-    });
-  }
+  const { writeContract, data: hashApprove, isPending: isWritingApprove, error: errApprove } = useWriteContract();
+  const waitApprove = useWaitForTransactionReceipt({ hash: hashApprove });
 
   // Buy
-  const {
-    writeContract: writeBuy,
-    data: buyHash,
-    isPending: buyPending,
-    error: buyErr,
-  } = useWriteContract();
+  const { writeContract: writeBuy, data: hashBuy, isPending: isWritingBuy, error: errBuy } = useWriteContract();
+  const waitBuy = useWaitForTransactionReceipt({ hash: hashBuy });
 
-  const buyRec = useWaitForTransactionReceipt({
-    hash: buyHash,
-    query: { enabled: !!buyHash },
-  });
+  const onApprove = () => {
+    const dec = Number(decRead.data ?? 18);
+    const wei = toWei(amount, dec);
+    writeContract({
+      address: ADDR.USDT,
+      abi: usdtAbi,
+      functionName: 'approve',
+      args: [ADDR.SALE, wei]
+    });
+  };
 
-  function onBuy() {
+  const onBuy = () => {
+    const dec = Number(decRead.data ?? 18);
+    const wei = toWei(amount, dec);
     writeBuy({
       address: ADDR.SALE,
       abi: nblSaleAbi,
-      functionName: "buy", // ABI में buy(uint256 usdt, address ref)
-      args: [amountWei, refParam],
+      functionName: 'buy',
+      args: [wei, ref ?? '0x0000000000000000000000000000000000000000']
     });
-  }
-
-  const waitingApprove = approvePending || approveRec.isLoading;
-  const waitingBuy = buyPending || buyRec.isLoading;
+  };
 
   return (
-    <main style={{ maxWidth: 920, margin: "30px auto", padding: "0 16px" }}>
-      <h2>Nebullas • BSC Testnet</h2>
+    <main>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <h2>Nebullas • BSC Testnet</h2>
+        {/* ऊपर लेआउट में ConnectBar है; buy में कंडीशनल टेक्स्ट */}
+        <div>{isConnected ? <code>{address?.slice(0,6)}…{address?.slice(-4)}</code> : <span>Connect wallet (top‑right)</span>}</div>
+      </div>
 
-      <section style={{ border: "1px solid #e5e7eb", padding: 16, borderRadius: 8 }}>
+      <section className="card">
         <h3>Buy NBL with USDT</h3>
 
-        <label>USDT Amount</label>
-        <input
-          type="number"
-          min={50}
-          max={10000}
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-          style={{ width: 160, padding: 8 }}
-        />
-        <p>Min 50 • Max 10000 USDT</p>
+        <p>USDT Amount</p>
+        <input value={amount} onChange={e => setAmount(e.target.value)} style={{ width:220 }} />
 
-        <p>Referral: <code>{refParam === ZERO ? "—" : refParam}</code></p>
+        <p style={{ marginTop:8 }}>Min 50 • Max 10000 USDT</p>
+        <p>Referral: <code>{ref ?? '-'}</code></p>
 
-        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-          <button onClick={onApprove} disabled={!address || waitingApprove}>
-            Approve USDT
+        <div style={{ display:'flex', gap:8, marginTop:10 }}>
+          <button onClick={onApprove} disabled={!isConnected || !needApprove || isWritingApprove}>
+            {isWritingApprove ? 'Approving…' : 'Approve USDT'}
           </button>
-          <button onClick={onBuy} disabled={!address || waitingBuy}>
-            Buy
+          <button onClick={onBuy} disabled={!isConnected || needApprove || isWritingBuy}>
+            {isWritingBuy ? 'Buying…' : 'Buy'}
           </button>
         </div>
 
-        {/* Approve status */}
-        {approveHash && (
-          <p style={{ marginTop: 8 }}>
-            Approve Tx:{" "}
-            <a
-              href={`https://testnet.bscscan.com/tx/${approveHash}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {approveHash}
-            </a>
-          </p>
-        )}
-        {approveErr && (
-          <p style={{ color: "crimson" }}>{String(approveErr.message ?? approveErr)}</p>
-        )}
-        {approveRec.isSuccess && <p style={{ color: "green" }}>Approve Success ✓</p>}
+        {hashApprove && <p>Approve Tx: <a href={`https://testnet.bscscan.com/tx/${hashApprove}`} target="_blank">open</a></p>}
+        {waitApprove.isSuccess && <p>Approval Success ✓</p>}
+        {errApprove && <p style={{color:'crimson'}}>Error: {String((errApprove as any)?.shortMessage ?? errApprove.message)}</p>}
 
-        {/* Buy status */}
-        {buyHash && (
-          <p style={{ marginTop: 8 }}>
-            Buy Tx:{" "}
-            <a
-              href={`https://testnet.bscscan.com/tx/${buyHash}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {buyHash}
-            </a>
-          </p>
-        )}
-        {buyErr && <p style={{ color: "crimson" }}>{String(buyErr.message ?? buyErr)}</p>}
-        {buyRec.isSuccess && <p style={{ color: "green" }}>Buy Success ✓</p>}
+        {hashBuy && <p>Buy Tx: <a href={`https://testnet.bscscan.com/tx/${hashBuy}`} target="_blank">open</a></p>}
+        {waitBuy.isSuccess && <p>Success ✓</p>}
+        {errBuy && <p style={{color:'crimson'}}>Error: {String((errBuy as any)?.shortMessage ?? errBuy.message)}</p>}
       </section>
     </main>
   );

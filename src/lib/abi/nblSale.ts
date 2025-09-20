@@ -1,8 +1,7 @@
 export const nblSaleAbi = [
-  { type:"function", name:"buy", stateMutability:"nonpayable",
-    inputs:[{name:"amount",type:"uint256"},{name:"expectedBuyer",type:"address"}], outputs:[] },
-  { type:"function", name:"minUSDT", stateMutability:"view", inputs:[], outputs:[{type:"uint256"}]},
-  { type:"function", name:"maxUSDT", stateMutability:"view", inputs:[], outputs:[{type:"uint256"}]},
-  { type:"function", name:"usdtDecimals", stateMutability:"view", inputs:[], outputs:[{type:"uint8"}]},
-  { type:"function", name:"activePhase", stateMutability:"view", inputs:[], outputs:[{type:"int8"}] }
+  // buy(usdtAmount, referrer) — बहुत‐सी ICO sales ऐसा सिग्नेचर रखती हैं
+  { type:'function', name:'buy', stateMutability:'nonpayable',
+    inputs:[{name:'usdtAmount',type:'uint256'},{name:'referrer',type:'address'}], outputs:[] },
+  // वैकल्पिक: यूज़र का NBL बैलेंस क्वेरी कर लें (sale से ही mint/transfer हो)
+  { type:'function', name:'nbl', stateMutability:'view', inputs:[], outputs:[{type:'address'}] }
 ] as const;
