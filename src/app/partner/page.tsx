@@ -1,83 +1,93 @@
-'use client';
+"use client";
 
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { ADDR } from '@/config/contracts';
-import { partnerRegistryAbi } from '@/lib/abi/partnerRegistry';
-import { partnerTreeAbi } from '@/lib/abi/partnerTree';
-import ConnectBar from '@/components/ConnectBar';
-import { useMemo } from 'react';
+import Link from "next/link";
+import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { ADDR } from "@/config/contracts";
+import { partnerRegistryAbi } from "@/lib/abi/partnerRegistry";
+import { partnerTreeAbi } from "@/lib/abi/partnerTree";
 
-function stateLabel(s?: number) {
-  switch (s) {
-    case 1: return 'ELIGIBLE';
-    case 2: return 'PENDING';
-    case 3: return 'APPROVED';
-    default: return '-';
-  }
-}
+const STATE = ["NONE", "ELIGIBLE", "PENDING", "APPROVED", "BLOCKED"] as const;
+const ZERO = "0x0000000000000000000000000000000000000000";
 
 export default function PartnerPage() {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
 
-  const kycRead = useReadContract({
+  const kyc = useReadContract({
     address: ADDR.REGISTRY,
     abi: partnerRegistryAbi,
-    functionName: 'kycPassed',
-    args: [address ?? '0x0000000000000000000000000000000000000000'],
-    query: { enabled: isConnected }
+    functionName: "kycPassed",
+    args: address ? ([address] as const) : undefined,
+    query: { enabled: Boolean(address) },
   });
 
-  const stateRead = useReadContract({
+  const st = useReadContract({
     address: ADDR.REGISTRY,
     abi: partnerRegistryAbi,
-    functionName: 'stateOf',
-    args: [address ?? '0x0000000000000000000000000000000000000000'],
-    query: { enabled: isConnected }
+    functionName: "stateOf",
+    args: address ? ([address] as const) : undefined,
+    query: { enabled: Boolean(address) },
   });
 
-  const uplines = useReadContract({
+  const stateLabel =
+    typeof st.data === "number" ? STATE[st.data] ?? "-" : "-";
+
+  const upl = useReadContract({
     address: ADDR.TREE,
     abi: partnerTreeAbi,
-    functionName: 'getUplines',
-    args: [address ?? '0x0000000000000000000000000000000000000000'],
-    query: { enabled: isConnected }
+    functionName: "getUplines",
+    args: address ? ([address] as const) : undefined,
+    query: { enabled: Boolean(address) },
   });
 
-  // Apply as Partner
-  const { writeContract, data: txApply, isPending: isWriting, error } = useWriteContract();
-  const waitApply = useWaitForTransactionReceipt({ hash: txApply });
-  const onApply = () => writeContract({ address: ADDR.REGISTRY, abi: partnerRegistryAbi, functionName: 'applyAsPartner', args: [] });
+  const showApply = Boolean(kyc.data === true && stateLabel === "ELIGIBLE");
 
-  const refLink = useMemo(() => {
-    if (!address) return '-';
-    const base = typeof window === 'undefined'
-      ? 'https://example.invalid'
-      : `${window.location.origin}/buy`;
-    return `${base}?ref=${address}`;
-  }, [address]);
+  const { writeContractAsync, isPending } = useWriteContract();
+  async function onApply() {
+    await writeContractAsync({
+      address: ADDR.REGISTRY,
+      abi: partnerRegistryAbi,
+      functionName: "applyAsPartner",
+    });
+  }
+
+  const refLink = address ? `/buy?ref=${address}` : undefined;
 
   return (
-    <main>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <h2>Partner Dashboard</h2>
-        <ConnectBar />
-      </div>
+    <main style={{ maxWidth: 1000, margin: "30px auto", padding: "0 16px" }}>
+      <h1>Partner Dashboard</h1>
 
-      <section className="card">
-        <p>KYC: <strong>{String(Boolean(kycRead.data))}</strong> • Partner State: <strong>{stateLabel(Number(stateRead.data))}</strong></p>
-        <button onClick={onApply} disabled={!isConnected || isWriting}>Apply as Partner</button>
-        {txApply && <p>Tx: <a href={`https://testnet.bscscan.com/tx/${txApply}`} target="_blank">open</a></p>}
-        {waitApply.isSuccess && <p>Success ✓</p>}
-        {error && <p style={{color:'crimson'}}>Error: {String((error as any)?.shortMessage ?? error.message)}</p>}
+      <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 16 }}>
+        <p>
+          KYC: <strong>{String(Boolean(kyc.data))}</strong> • Partner State:{" "}
+          <strong>{stateLabel}</strong>
+        </p>
 
-        <p style={{marginTop:10}}>Your Referral Link: <a href={refLink} target="_blank">{refLink}</a></p>
+        {showApply ? (
+          <button onClick={onApply} disabled={isPending}>
+            Apply as Partner
+          </button>
+        ) : null}
+
+        {refLink && (
+          <p style={{ marginTop: 12 }}>
+            Your Referral Link:{" "}
+            <Link href={refLink}>{refLink}</Link>
+          </p>
+        )}
       </section>
 
-      <section className="card">
+      <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 16, marginTop: 24 }}>
         <h3>Uplines (6‑level)</h3>
-        {Array.from({length:6}).map((_,i) => (
-          <p key={i}>L{i+1}: <code>{(uplines.data as readonly `0x${string}`[] | undefined)?.[i] ?? '—'}</code></p>
-        ))}
+        {Array.from({ length: 6 }).map((_, i) => {
+          const arr = Array.isArray(upl.data) ? (upl.data as readonly `0x${string}`[]) : undefined;
+          const a = arr?.[i];
+          const show = a && a !== ZERO ? a : "—";
+          return (
+            <p key={i}>
+              L{i + 1}: {show}
+            </p>
+          );
+        })}
       </section>
     </main>
   );

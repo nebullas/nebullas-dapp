@@ -1,79 +1,106 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { ADDR } from '@/config/contracts';
-import { partnerRegistryAbi } from '@/lib/abi/partnerRegistry';
-import ConnectBar from '@/components/ConnectBar';
+import { useMemo, useState } from "react";
+import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { isAddress } from "viem";
+import { ADDR } from "@/config/contracts";
+import { partnerRegistryAbi } from "@/lib/abi/partnerRegistry";
 
-function stateLabel(s?: number) {
-  switch (s) {
-    case 1: return 'ELIGIBLE';
-    case 2: return 'PENDING';
-    case 3: return 'APPROVED';
-    default: return '-';
-  }
-}
+const STATE = ["NONE", "ELIGIBLE", "PENDING", "APPROVED", "BLOCKED"] as const;
 
 export default function AdminPage() {
   const { address: admin } = useAccount();
-  const [target, setTarget] = useState<`0x${string}` | ''>('');
+  const [input, setInput] = useState("");
+  const target = useMemo(
+    () => (isAddress(input) ? (input as `0x${string}`) : undefined),
+    [input],
+  );
 
   const kycRead = useReadContract({
     address: ADDR.REGISTRY,
     abi: partnerRegistryAbi,
-    functionName: 'kycPassed',
-    args: [target || '0x0000000000000000000000000000000000000000'],
-    query: { enabled: Boolean(target) }
+    functionName: "kycPassed",
+    // वैध 0x पर ही call
+    args: target ? ([target] as const) : undefined,
+    query: { enabled: Boolean(target) },
   });
 
   const stateRead = useReadContract({
     address: ADDR.REGISTRY,
     abi: partnerRegistryAbi,
-    functionName: 'stateOf',
-    args: [target || '0x0000000000000000000000000000000000000000'],
-    query: { enabled: Boolean(target) }
+    functionName: "stateOf",
+    args: target ? ([target] as const) : undefined,
+    query: { enabled: Boolean(target) },
   });
 
-  // writes
-  const { writeContract, data: hash, isPending, error } = useWriteContract();
-  const wait = useWaitForTransactionReceipt({ hash });
+  const stateLabel =
+    typeof stateRead.data === "number" ? STATE[stateRead.data] ?? "-" : "-";
 
-  const onSetKYCTrue = () =>
-    writeContract({ address: ADDR.REGISTRY, abi: partnerRegistryAbi, functionName: 'setKYC', args: [target as `0x${string}`, true] });
+  const { writeContractAsync, isPending } = useWriteContract();
+  const [waiting, setWaiting] = useState(false);
 
-  const onApprovePartner = () =>
-    writeContract({ address: ADDR.REGISTRY, abi: partnerRegistryAbi, functionName: 'approve', args: [target as `0x${string}`] });
+  async function setKYCTrue() {
+    if (!target) return;
+    setWaiting(true);
+    try {
+      await writeContractAsync({
+        address: ADDR.REGISTRY,
+        abi: partnerRegistryAbi,
+        functionName: "setKYC",
+        args: [target, true] as const,
+      });
+    } finally {
+      setWaiting(false);
+    }
+  }
+
+  async function approvePartner() {
+    if (!target) return;
+    setWaiting(true);
+    try {
+      await writeContractAsync({
+        address: ADDR.REGISTRY,
+        abi: partnerRegistryAbi,
+        functionName: "approve",
+        args: [target] as const,
+      });
+    } finally {
+      setWaiting(false);
+    }
+  }
 
   return (
-    <main>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <h2>Admin Panel</h2>
-        <ConnectBar />
-      </div>
+    <main style={{ maxWidth: 1000, margin: "30px auto", padding: "0 16px" }}>
+      <h1 style={{ marginBottom: 24 }}>Admin Panel</h1>
 
-      <section className="card">
+      <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 16 }}>
         <h3>KYC & Partner</h3>
-        <p><strong>Admin:</strong> <code>{admin ?? '-'}</code></p>
 
-        <label>Address</label>
+        <p>
+          <strong>Admin:</strong>{" "}
+          <code>{admin ?? "-"}</code>
+        </p>
+
         <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
           placeholder="0x..."
-          value={target}
-          onChange={e => setTarget(e.target.value as any)}
-          style={{ width:'100%', margin:'6px 0 10px' }}
+          style={{ width: "100%", padding: 12, border: "1px solid #ddd", borderRadius: 8 }}
         />
 
-        <p>KYC: <strong>{String(Boolean(kycRead.data))}</strong> • Partner State: <strong>{stateLabel(Number(stateRead.data))}</strong></p>
+        <p style={{ marginTop: 12 }}>
+          KYC: <strong>{String(Boolean(kycRead.data))}</strong> • Partner State:{" "}
+          <strong>{stateLabel}</strong>
+        </p>
 
-        <div style={{ display:'flex', gap:12, marginTop:8 }}>
-          <button onClick={onSetKYCTrue} disabled={!target || isPending || wait.isPending}>Set KYC = true</button>
-          <button onClick={onApprovePartner} disabled={!target || isPending || wait.isPending}>Approve Partner</button>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={setKYCTrue} disabled={!target || isPending || waiting}>
+            Set KYC = true
+          </button>
+          <button onClick={approvePartner} disabled={!target || isPending || waiting}>
+            Approve Partner
+          </button>
         </div>
-
-        {hash && <p>Tx: <a href={`https://testnet.bscscan.com/tx/${hash}`} target="_blank">open</a></p>}
-        {wait.isSuccess && <p>Success ✓</p>}
-        {error && <p style={{color:'crimson'}}>Error: {String((error as any)?.shortMessage ?? error.message)}</p>}
       </section>
     </main>
   );
